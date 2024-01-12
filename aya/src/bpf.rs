@@ -9,6 +9,7 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+use std::cell::{Ref, RefCell, RefMut};
 
 use aya_obj::{
     btf::{BtfFeatures, BtfRelocationError},
@@ -694,10 +695,10 @@ impl<'a> BpfLoader<'a> {
         let maps = maps
             .drain()
             .map(parse_map)
-            .collect::<Result<HashMap<String, Map>, BpfError>>()?;
+            .collect::<Result<HashMap<String, RefCell<Map>>, BpfError>>()?;
 
         if !*allow_unsupported_maps {
-            maps.iter().try_for_each(|(_, x)| match x {
+            maps.iter().try_for_each(|(_, x)| match &*x.borrow() {
                 Map::Unsupported(map) => Err(BpfError::MapError(MapError::Unsupported {
                     map_type: map.obj().map_type(),
                 })),
@@ -709,7 +710,7 @@ impl<'a> BpfLoader<'a> {
     }
 }
 
-fn parse_map(data: (String, MapData)) -> Result<(String, Map), BpfError> {
+fn parse_map(data: (String, MapData)) -> Result<(String, RefCell<Map>), BpfError> {
     let (name, map) = data;
     let map_type = bpf_map_type::try_from(map.obj().map_type()).map_err(MapError::from)?;
     let map = match map_type {
@@ -739,7 +740,7 @@ fn parse_map(data: (String, MapData)) -> Result<(String, Map), BpfError> {
         }
     };
 
-    Ok((name, map))
+    Ok((name, RefCell::new(map)))
 }
 
 /// Computes the value which should be used to override the max_entries value of the map
@@ -850,7 +851,7 @@ impl Default for BpfLoader<'_> {
 /// The main entry point into the library, used to work with eBPF programs and maps.
 #[derive(Debug)]
 pub struct Bpf {
-    maps: HashMap<String, Map>,
+    maps: HashMap<String, RefCell<Map>>,
     programs: HashMap<String, Program>,
 }
 
@@ -909,8 +910,8 @@ impl Bpf {
     ///
     /// For more details and examples on maps and their usage, see the [maps module
     /// documentation][crate::maps].
-    pub fn map(&self, name: &str) -> Option<&Map> {
-        self.maps.get(name)
+    pub fn map(&self, name: &str) -> Option<Ref<'_, Map>> {
+        self.maps.get(name).map(|x| x.borrow())
     }
 
     /// Returns a mutable reference to the map with the given name.
@@ -920,8 +921,8 @@ impl Bpf {
     ///
     /// For more details and examples on maps and their usage, see the [maps module
     /// documentation][crate::maps].
-    pub fn map_mut(&mut self, name: &str) -> Option<&mut Map> {
-        self.maps.get_mut(name)
+    pub fn map_mut(& self, name: &str) -> Option<RefMut<'_, Map>> {
+        self.maps.get(name).map(|x| x.borrow_mut())
     }
 
     /// Takes ownership of a map with the given name.
@@ -937,7 +938,7 @@ impl Bpf {
     /// For more details and examples on maps and their usage, see the [maps module
     /// documentation][crate::maps].
     pub fn take_map(&mut self, name: &str) -> Option<Map> {
-        self.maps.remove(name)
+        self.maps.remove(name).map(|x| x.take())
     }
 
     /// An iterator over all the maps.
@@ -953,8 +954,8 @@ impl Bpf {
     /// }
     /// # Ok::<(), aya::BpfError>(())
     /// ```
-    pub fn maps(&self) -> impl Iterator<Item = (&str, &Map)> {
-        self.maps.iter().map(|(name, map)| (name.as_str(), map))
+    pub fn maps(&self) -> impl Iterator<Item = (&str, Ref<'_, Map>)> {
+        self.maps.iter().map(|(name, map)| (name.as_str(), map.borrow()))
     }
 
     /// A mutable iterator over all the maps.
@@ -976,8 +977,8 @@ impl Bpf {
     /// }
     /// # Ok::<(), Error>(())
     /// ```
-    pub fn maps_mut(&mut self) -> impl Iterator<Item = (&str, &mut Map)> {
-        self.maps.iter_mut().map(|(name, map)| (name.as_str(), map))
+    pub fn maps_mut(&mut self) -> impl Iterator<Item = (&str, RefMut<'_, Map>)> {
+        self.maps.iter_mut().map(|(name, map)| (name.as_str(), map.borrow_mut()))
     }
 
     /// Returns a reference to the program with the given name.

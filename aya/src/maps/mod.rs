@@ -298,6 +298,8 @@ pub enum Map {
     Unsupported(MapData),
     /// A [`XskMap`] map.
     XskMap(MapData),
+    /// A placeholder for deriving Default trait
+    None
 }
 
 impl Map {
@@ -325,6 +327,7 @@ impl Map {
             Self::StackTraceMap(map) => map.obj.map_type(),
             Self::Unsupported(map) => map.obj.map_type(),
             Self::XskMap(map) => map.obj.map_type(),
+            Self::None => panic!("Using cleared map")
         }
     }
 
@@ -355,10 +358,17 @@ impl Map {
             Self::StackTraceMap(map) => map.pin(path),
             Self::Unsupported(map) => map.pin(path),
             Self::XskMap(map) => map.pin(path),
+            Self::None => panic!("Using cleared map")
         }
     }
 }
 
+
+impl Default for Map {
+    fn default() -> Self {
+        Map::None
+    }
+}
 // Implements map pinning for different map implementations
 macro_rules! impl_map_pin {
     ($ty_param:tt {
